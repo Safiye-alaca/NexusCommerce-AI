@@ -1,9 +1,19 @@
+import os
 import json
 from google import genai
 from google.genai import types
 from stock_analyzer import analyze_stock_runout_risk
+from dotenv import load_dotenv
 
-GOOGLE_API_KEY = "AQ.Ab8RN6KGUVgT4sOLZP3-uJrqKPqUDS2G6em_qmM2Zp6SsNY2qg"
+# .env dosyasını sisteme yükle
+load_dotenv()
+
+GOOGLE_API_KEY = os.getenv("GEMINI_API_KEY")
+
+# API Anahtarı kontrolü
+if not GOOGLE_API_KEY:
+    raise ValueError("❌ HATA: .env dosyasından GEMINI_API_KEY okunamadı!")
+
 client = genai.Client(api_key=GOOGLE_API_KEY)
 
 def run_data_scientist_agent():
@@ -35,5 +45,8 @@ def run_data_scientist_agent():
     print(response.text)
     print("==================================================")
     
-    # 🔥 MÜHENDİSLİK DOKUNUŞU: Üretilen Türkçe metni hafızada tut ve geri döndür!
     return response.text
+
+# 🚨 KRİTİK TETİKLEYİCİ: Dosya doğrudan çalıştırıldığında fonksiyonu başlatır!
+if __name__ == "__main__":
+    run_data_scientist_agent()

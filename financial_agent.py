@@ -1,12 +1,21 @@
+import os
 import json
 from google import genai
 from google.genai import types
 from pricing_strategy import calculate_dynamic_pricing
+from dotenv import load_dotenv
 
-GOOGLE_API_KEY = "AQ.Ab8RN6KGUVgT4sOLZP3-uJrqKPqUDS2G6em_qmM2Zp6SsNY2qg"
+# .env dosyasını sisteme yükle
+load_dotenv()
+
+GOOGLE_API_KEY = os.getenv("GEMINI_API_KEY")
+
+# API Anahtarı kontrolü
+if not GOOGLE_API_KEY:
+    raise ValueError("❌ HATA: .env dosyasından GEMINI_API_KEY okunamadı!")
+
 client = genai.Client(api_key=GOOGLE_API_KEY)
 
-# 🔥 MÜHENDİSLİK DOKUNUŞU: Fonksiyona dışarıdan stok_ajani_yorumu parametresi ekledik
 def run_financial_agent(stok_ajani_yorumu=""):
     print("🤖 Finans Ajanı (Gemini v2) yeni fiyatları ve kâr marjlarını analiz ediyor...\n")
     
@@ -42,3 +51,7 @@ def run_financial_agent(stok_ajani_yorumu=""):
     print("==================================================")
     print(response.text)
     print("==================================================")
+
+# Modülün test edilebilmesi için tetikleyici
+if __name__ == "__main__":
+    run_financial_agent()
