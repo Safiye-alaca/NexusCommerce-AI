@@ -1,5 +1,6 @@
 import os
 import json
+import sqlite3 # 🚨 SQL Entegrasyonu için eklendi
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -21,13 +22,25 @@ st.set_page_config(
 # Load global environment rules
 load_dotenv()
 
-# Link directly to your existing production database
-CSV_FILE = "ecommerce_data.csv"
+DB_FILE = "nexus_store.db" # 🚨 Yeni Canlı Veri Tabanı Kaynağımız
 
-# Sync Streamlit Session State with actual database
-if "db" not in st.session_state:
-    st.session_state.db = pd.read_csv(CSV_FILE)
+# --- 🛠️ SQL VERİ TABANI YARDIMCI FONKSİYONLARI ---
+def sql_query_to_dataframe(query, params=()):
+    """SQL sorgusunu çalıştırır ve Streamlit/Pandas bileşenleri için DataFrame döner."""
+    conn = sqlite3.connect(DB_FILE)
+    df = pd.read_sql_query(query, conn, params=params)
+    conn.close()
+    return df
 
+def sql_execute_command(command, params=()):
+    """UPDATE, INSERT gibi veri tabanını değiştiren SQL komutlarını yürütür."""
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute(command, params)
+    conn.commit()
+    conn.close()
+
+# --- 📊 INITIALIZATION LAYER ---
 if "ai_pricing_recommendations" not in st.session_state:
     st.session_state.ai_pricing_recommendations = None
 
@@ -37,6 +50,10 @@ if "inventory_insight" not in st.session_state:
 if "is_pending" not in st.session_state:
     st.session_state.is_pending = False
 
+# Tüm ürünlerin isimlerini Selectbox için SQL'den çekiyoruz
+product_options_df = sql_query_to_dataframe("SELECT Urun_Adi FROM products")
+product_options = product_options_df["Urun_Adi"].tolist()
+
 # --- SIDEBAR CONTROL ROOM ---
 with st.sidebar:
     st.image("https://img.icons8.com/fluent/96/000000/artificial-intelligence.png", width=60)
@@ -44,18 +61,18 @@ with st.sidebar:
     st.caption("Developer Platform Console")
     st.markdown("---")
     
-    # Dynamic Product Selection
+    # Dynamic Product Selection (SQL Destekli)
     st.subheader("📦 Inventory Selection")
-    product_options = st.session_state.db["Urun_Adi"].tolist()
     selected_product_name = st.selectbox("Select Target Product", product_options)
     
-    # Find indexes and row parameters
-    target_idx = st.session_state.db[st.session_state.db["Urun_Adi"] == selected_product_name].index[0]
-    product_id = st.session_state.db.loc[target_idx, "Urun_ID"]
-    stok_miktari = int(st.session_state.db.loc[target_idx, "Kalan_Stok"])
-    maliyet = float(st.session_state.db.loc[target_idx, "Maliyet"])
-    mevcut_fiyat = float(st.session_state.db.loc[target_idx, "Mevcut_Fiyat"])
-    talep_skoru = int(st.session_state.db.loc[target_idx, "Gunluk_Satis"])
+    # 🎯 SQL Nokta Atışı Filtreleme: Sadece seçilen ürünün verilerini getirir
+    product_data = sql_query_to_dataframe("SELECT * FROM products WHERE Urun_Adi = ?", (selected_product_name,))
+    
+    product_id = product_data.loc[0, "Urun_ID"]
+    stok_miktari = int(product_data.loc[0, "Kalan_Stok"])
+    maliyet = float(product_data.loc[0, "Maliyet"])
+    mevcut_fiyat = float(product_data.loc[0, "Mevcut_Fiyat"])
+    talep_skoru = int(product_data.loc[0, "Gunluk_Satis"])
 
     st.markdown("---")
     st.subheader("⚙️ Model & Parameter Matrix")
@@ -67,9 +84,12 @@ with st.sidebar:
     yeni_stok = st.slider("Simulated Local Stock Levels", 0, 500, stok_miktari)
     
     if st.button("Inject Market Conditions"):
-        st.session_state.db.at[target_idx, "Gunluk_Satis"] = yeni_talep
-        st.session_state.db.at[target_idx, "Kalan_Stok"] = yeni_stok
-        st.session_state.db.to_csv(CSV_FILE, index=False)
+        # 🚨 ESKİ: Pandas ile CSV'ye yazma tamamen kaldırıldı.
+        # 🚀 YENİ: Doğrudan SQL UPDATE komutuyla veri tabanı güncelleniyor.
+        sql_execute_command(
+            "UPDATE products SET Gunluk_Satis = ?, Kalan_Stok = ? WHERE Urun_ID = ?",
+            (yeni_talep, yeni_stok, product_id)
+        )
         st.session_state.is_pending = False  
         st.rerun()
 
@@ -162,12 +182,11 @@ with layout_col2:
                 st.session_state.is_pending = True
                 
             except (ClientError, ServerError) as e:
-                # 🛡️ GLOBAL KORUMA KALKANI: 429 ve 503 hatalarında Streamlit arayüzünün çökmesini engeller.
                 if "503" in str(e) or "UNAVAILABLE" in str(e):
                     st.session_state.inventory_insight = "⚠️ **NexusCommerce AI Sunucu Uyarısı:** Google Gemini servisleri şu an aşırı yoğun (503). Sistem otomatik olarak kural tabanlı yerel emniyet moduna geçiş yaptı. İşlemlerinize devam edebilirsiniz."
                     st.session_state.is_pending = True
                 elif "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                    st.session_state.inventory_insight = "⚠️ **NexusCommerce AI Uyarı Hattı:** Google API günlük ücretsiz istek kotanız doldu. Lütfen 1 dakika sonra tekrar deneyin veya AI Studio'dan faturalandırmayı açarak kotayı genişletin. (Sistem güvenli yerel modda çalışmaya devam ediyor)."
+                    st.session_state.inventory_insight = "⚠️ **NexusCommerce AI Uyarı Hattı:** Google API günlük ücretsiz istek kotanız doldu. Sistem güvenli yerel modda çalışmaya devam ediyor."
                     st.session_state.is_pending = True
                 else:
                     raise e
@@ -192,15 +211,15 @@ onay_col1, onay_col2, _ = st.columns([1.5, 1.5, 4])
 
 with onay_col1:
     if st.button("🚀 Authorize & Deploy to Store", use_container_width=True, type="primary"):
-        df_csv = pd.read_csv(CSV_FILE)
         
+        # 🚨 ESKİ: CSV açıp satır satır değiştirme mantığı silindi.
+        # 🚀 YENİ: Fiyat güncellemesi tek satır SQL sorgusuyla yapılıyor.
         if st.session_state.ai_pricing_recommendations:
             for rec in st.session_state.ai_pricing_recommendations:
-                idx = df_csv[df_csv['Urun_ID'] == rec['Urun_ID']].index[-1]
-                df_csv.at[idx, 'Mevcut_Fiyat'] = rec['Onerilen_Yeni_Fiyat']
-                
-        df_csv.to_csv(CSV_FILE, index=False)
-        st.session_state.db = df_csv
+                sql_execute_command(
+                    "UPDATE products SET Mevcut_Fiyat = ? WHERE Urun_ID = ?",
+                    (rec['Onerilen_Yeni_Fiyat'], rec['Urun_ID'])
+                )
         
         # 🚀 Tarafsız Gateway Entegrasyon Senkronizasyonu
         gateway_service = ECommerceGateway()
