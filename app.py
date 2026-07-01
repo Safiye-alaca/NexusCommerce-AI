@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from data_scientist_agent import run_data_scientist_agent
 from financial_agent import run_financial_agent
 from pricing_strategy import calculate_dynamic_pricing
+from ecommerce_gateway import ECommerceGateway
 
 # 1. PAGE CONFIGURATION & ENTERPRISE THEME
 st.set_page_config(
@@ -69,7 +70,7 @@ with st.sidebar:
         st.session_state.db.at[target_idx, "Gunluk_Satis"] = yeni_talep
         st.session_state.db.at[target_idx, "Kalan_Stok"] = yeni_stok
         st.session_state.db.to_csv(CSV_FILE, index=False)
-        st.session_state.is_pending = False  # Reset analysis state for the new input
+        st.session_state.is_pending = False  
         st.rerun()
 
 # --- MAIN INDUSTRIAL EXECUTIVE PANEL ---
@@ -133,32 +134,43 @@ with layout_col1:
 with layout_col2:
     st.subheader("🤖 Live Multi-Agent Reasoner Session")
     
-    # 🎯 KRİTİK DÜZELTME: Eğer ürün değişirse pend State'ini sıfırlayarak ajanı o ürüne özel yeniden tetikliyoruz
     if "last_selected_product" not in st.session_state or st.session_state.last_selected_product != selected_product_name:
         st.session_state.last_selected_product = selected_product_name
         st.session_state.is_pending = False
 
     if not st.session_state.is_pending:
         with st.spinner(f"🕵️‍♂️ Orchestrating agent focus specifically on {selected_product_name}..."):
-            # Ajanların genel fonksiyonlarını çağırıyoruz
-            genel_rapor = run_data_scientist_agent()
-            st.session_state.ai_pricing_recommendations = calculate_dynamic_pricing()
-            
-            # 🔥 MÜHENDİSLİK DOKUNUŞU: Gemini'den gelen genel metni sadece seçilen ürüne odaklanacak şekilde LLM filtresinden geçiriyoruz
-            from google import genai
-            client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-            
-            filter_prompt = f"""
-            Sana bir multi-agent sisteminin ürettiği tüm dükkan raporu verilecek.
-            Senden isteğim, bu rapordan SADECE ve YALNIZCA '{selected_product_name} ({product_id})' ürünü ile ilgili olan analiz, durum ve öneri kısımlarını ayıklayıp, 
-            mağaza sahibine hitaben samimi ve profesyonel bir dille sunmandır. Diğer ürünlerden bahsetme.
-            
-            Genel Rapor:
-            {genel_rapor}
-            """
-            response = client.models.generate_content(model='gemini-2.5-flash', contents=filter_prompt)
-            st.session_state.inventory_insight = response.text
-            st.session_state.is_pending = True
+            try:
+                genel_rapor = run_data_scientist_agent()
+                st.session_state.ai_pricing_recommendations = calculate_dynamic_pricing()
+                
+                from google import genai
+                from google.genai.errors import ClientError, ServerError
+                
+                client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+                
+                filter_prompt = f"""
+                Sana bir multi-agent sisteminin ürettiği tüm dükkan raporu verilecek.
+                Senden isteğim, bu rapordan SADECE ve YALNIZCA '{selected_product_name} ({product_id})' ürünü ile ilgili olan analiz, durum ve öneri kısımlarını ayıklayıp, 
+                mağaza sahibine hitaben samimi ve profesyonel bir dille sunmandır. Diğer ürünlerden bahsetme.
+                
+                Genel Rapor:
+                {genel_rapor}
+                """
+                response = client.models.generate_content(model='gemini-2.5-flash', contents=filter_prompt)
+                st.session_state.inventory_insight = response.text
+                st.session_state.is_pending = True
+                
+            except (ClientError, ServerError) as e:
+                # 🛡️ GLOBAL KORUMA KALKANI: 429 ve 503 hatalarında Streamlit arayüzünün çökmesini engeller.
+                if "503" in str(e) or "UNAVAILABLE" in str(e):
+                    st.session_state.inventory_insight = "⚠️ **NexusCommerce AI Sunucu Uyarısı:** Google Gemini servisleri şu an aşırı yoğun (503). Sistem otomatik olarak kural tabanlı yerel emniyet moduna geçiş yaptı. İşlemlerinize devam edebilirsiniz."
+                    st.session_state.is_pending = True
+                elif "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                    st.session_state.inventory_insight = "⚠️ **NexusCommerce AI Uyarı Hattı:** Google API günlük ücretsiz istek kotanız doldu. Lütfen 1 dakika sonra tekrar deneyin veya AI Studio'dan faturalandırmayı açarak kotayı genişletin. (Sistem güvenli yerel modda çalışmaya devam ediyor)."
+                    st.session_state.is_pending = True
+                else:
+                    raise e
 
     st.info(st.session_state.inventory_insight)
     
@@ -190,7 +202,17 @@ with onay_col1:
         df_csv.to_csv(CSV_FILE, index=False)
         st.session_state.db = df_csv
         
-        st.toast(f"Strategy deployed! {selected_product_name} dynamics pushed to live core system layers.", icon="🚀")
+        # 🚀 Tarafsız Gateway Entegrasyon Senkronizasyonu
+        gateway_service = ECommerceGateway()
+        with st.spinner("Synchronizing prices with target store infrastructure..."):
+            api_success = gateway_service.sync_product_price(product_id, proposed_ui_price)
+            
+        if api_success:
+            st.toast(f"Strategy deployed! {selected_product_name} pricing data synchronized across channels.", icon="🚀")
+            st.balloons()
+        else:
+            st.error("Gateway synchronization failed. Check core network credentials.")
+            
         st.session_state.is_pending = False
         st.rerun()
 
