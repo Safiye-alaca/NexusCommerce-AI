@@ -1,6 +1,6 @@
 import os
 import json
-import sqlite3 # 🚨 SQL Entegrasyonu
+import sqlite3 
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -22,18 +22,16 @@ st.set_page_config(
 # Load global environment rules
 load_dotenv()
 
-DB_FILE = "nexus_store.db" # 🚨 Canlı Veri Tabanı Kaynağımız
+DB_FILE = "nexus_store.db" 
 
 # --- 🛠️ SQL VERİ TABANI YARDIMCI FONKSİYONLARI ---
 def sql_query_to_dataframe(query, params=()):
-    """SQL sorgusunu çalıştırır ve Streamlit/Pandas bileşenleri için DataFrame döner."""
     conn = sqlite3.connect(DB_FILE)
     df = pd.read_sql_query(query, conn, params=params)
     conn.close()
     return df
 
 def sql_execute_command(command, params=()):
-    """UPDATE, INSERT gibi veri tabanını değiştiren SQL komutlarını yürütür."""
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute(command, params)
@@ -46,6 +44,9 @@ if "ai_pricing_recommendations" not in st.session_state:
 
 if "inventory_insight" not in st.session_state:
     st.session_state.inventory_insight = ""
+
+if "financial_insight" not in st.session_state:
+    st.session_state.financial_insight = ""
 
 if "is_pending" not in st.session_state:
     st.session_state.is_pending = False
@@ -61,11 +62,10 @@ with st.sidebar:
     st.caption("Developer Platform Console")
     st.markdown("---")
     
-    # Dynamic Product Selection (SQL Destekli)
+    # Dynamic Product Selection
     st.subheader("📦 Inventory Selection")
     selected_product_name = st.selectbox("Select Target Product", product_options)
     
-    # 🎯 SQL Nokta Atışı Filtreleme: Sadece seçilen ürünün verilerini getirir
     product_data = sql_query_to_dataframe("SELECT * FROM products WHERE Urun_Adi = ?", (selected_product_name,))
     
     product_id = product_data.loc[0, "Urun_ID"]
@@ -86,13 +86,11 @@ with st.sidebar:
     if st.button("Inject Market Conditions"):
         eski_stok = stok_miktari
         
-        # 1. Doğrudan SQL UPDATE komutuyla veri tabanı güncelleniyor.
         sql_execute_command(
             "UPDATE products SET Gunluk_Satis = ?, Kalan_Stok = ? WHERE Urun_ID = ?",
             (yeni_talep, yeni_stok, product_id)
         )
         
-        # 2. audit_logs tablosuna stok enjeksiyon geçmişini güvenle kaydet
         sql_execute_command(
             """INSERT INTO audit_logs (Urun_ID, Islem_Turu, Eski_Deger, Yeni_Deger) 
                VALUES (?, 'STOK_ENJEKSIYON', ?, ?)""",
@@ -107,12 +105,8 @@ st.markdown(f"# 🔮 NexusCommerce AI - Operational Optimization Hub")
 st.markdown(f"Autonomous multi-agent orchestration console monitoring product telemetry for **{selected_product_name}** ({product_id}).")
 st.markdown("---")
 
-# ==========================================
-# 🚨 3. ADIM: PROAKTİF KİRİTİK STOK BİLDİRİM MERKEZİ (THRESHOLD DETECTOR)
-# ==========================================
-# Veri tabanından stoğu 60 birimin altına düşmüş kritik ürünleri sorguluyoruz
+# Kritik Stok Proaktif Bildirimleri
 kritik_urunler_df = sql_query_to_dataframe("SELECT Urun_Adi, Kalan_Stok FROM products WHERE Kalan_Stok < 60")
-
 if not kritik_urunler_df.empty:
     st.subheader("🚨 Critical Operational Alerts (Proactive Supply Chain Control)")
     for _, row in kritik_urunler_df.iterrows():
@@ -122,7 +116,7 @@ if not kritik_urunler_df.empty:
         )
     st.markdown("---")
 
-# 4. TOP TIERS: EXECUTIVE METRIC BOARDS
+# Metrik Panosu
 col1, col2, col3, col4 = st.columns(4)
 with col1:
     st.metric(label="📦 Warehouse Inventory", value=f"{stok_miktari} Units", delta="-7 Risk Delta" if stok_miktari < talep_skoru else "Optimal")
@@ -135,7 +129,7 @@ with col4:
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# 5. CORE LAYER: GRAPHICAL ECHARTS INTERFACE & REAL AGENT BRAIN
+# Grafik ve Ajan Bölmesi
 layout_col1, layout_col2 = st.columns([3, 2])
 
 with layout_col1:
@@ -176,46 +170,55 @@ with layout_col1:
     st_echarts(options=options, height="350px")
 
 with layout_col2:
-    st.subheader("🤖 Live Multi-Agent Reasoner Session")
+    st.subheader("🔮 Autonomous Agent Consensus Room")
     
     if "last_selected_product" not in st.session_state or st.session_state.last_selected_product != selected_product_name:
         st.session_state.last_selected_product = selected_product_name
         st.session_state.is_pending = False
 
     if not st.session_state.is_pending:
-        with st.spinner(f"🕵️‍♂️ Orchestrating agent focus specifically on {selected_product_name}..."):
+        with st.spinner(f"🕵️‍♂️ Ajanlar arası otonom tartışma oturumu başlatılıyor..."):
+            
+            # 1. ZİNCİR ADIMI: Veri Bilimci Lojistik Raporu Hazırlıyor
+            genel_rapor = run_data_scientist_agent()
+            st.session_state.ai_pricing_recommendations = calculate_dynamic_pricing()
+            
+            # 2. ZİNCİR ADIMI: Finans Direktörü Ajanı, Lojistik Raporu Okuyarak Karar Veriyor
+            mali_rapor = run_financial_agent(stok_ajani_yorumu=genel_rapor)
+            
+            # 3. ZİNCİR ADIMI: Mağaza sahibine sadece seçili ürünü ayıklayan filtre promptu
+            from google import genai
+            from google.genai.errors import ClientError, ServerError
+            
             try:
-                genel_rapor = run_data_scientist_agent()
-                st.session_state.ai_pricing_recommendations = calculate_dynamic_pricing()
-                
-                from google import genai
-                from google.genai.errors import ClientError, ServerError
-                
                 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
                 
                 filter_prompt = f"""
-                Sana bir multi-agent sisteminin ürettiği tüm dükkan raporu verilecek.
-                Senden isteğim, bu rapordan SADECE ve YALNIZCA '{selected_product_name} ({product_id})' ürünü ile ilgili olan analiz, durum ve öneri kısımlarını ayıklayıp, 
-                mağaza sahibine hitaben samimi ve profesyonel bir dille sunmandır. Diğer ürünlerden bahsetme.
+                Sana bir veri bilimci ve bir finans ajanının ortak tartışma raporları verildi.
+                Senden isteğim, bu raporlardan SADECE ve YALNIZCA '{selected_product_name} ({product_id})' ürünü ile ilgili olan lojistik analizleri ve finansal fiyat stratejilerini ayıklayıp, 
+                mağaza sahibine hitaben 'Ortak Mutabakat Raporu' başlığı altında samimi ve profesyonel bir dille sunmandır. Diğer ürünlerden bahsetme.
                 
-                Genel Rapor:
-                {genel_rapor}
+                Veri Bilimci Raporu: {genel_rapor}
+                Finans Raporu: {mali_rapor}
                 """
                 response = client.models.generate_content(model='gemini-2.5-flash', contents=filter_prompt)
                 st.session_state.inventory_insight = response.text
+                st.session_state.financial_insight = mali_rapor
                 st.session_state.is_pending = True
                 
             except (ClientError, ServerError) as e:
+                st.session_state.is_pending = True
                 if "503" in str(e) or "UNAVAILABLE" in str(e):
-                    st.session_state.inventory_insight = "⚠️ **NexusCommerce AI Sunucu Uyarısı:** Google Gemini servisleri şu an aşırı yoğun (503). Sistem otomatik olarak kural tabanlı yerel emniyet moduna geçiş yaptı. İşlemlerinize devam edebilirsiniz."
-                    st.session_state.is_pending = True
-                elif "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                    st.session_state.inventory_insight = "⚠️ **NexusCommerce AI Uyarı Hattı:** Google API günlük ücretsiz istek kotanız doldu. Sistem güvenli yerel modda çalışmaya devam ediyor."
-                    st.session_state.is_pending = True
+                    st.session_state.inventory_insight = "⚠️ **Sunucu Yoğun (503):** Canlı tartışma günlüğü oluşturulamadı. Algoritmik emniyet fiyatları devrededir."
                 else:
-                    raise e
+                    st.session_state.inventory_insight = "⚠️ **Kota Sınırı (429):** Günlük istek limitiniz aşıldı. Kural tabanlı yerel motor devrededir."
 
-    st.info(st.session_state.inventory_insight)
+    # Arayüzde Şık Sekmeler (Tabs) ile Kararları Gösteriyoruz
+    tab1, tab2 = st.tabs(["🤝 Executive Consensus", "📊 Raw CFO Log"])
+    with tab1:
+        st.info(st.session_state.inventory_insight)
+    with tab2:
+        st.caption(st.session_state.financial_insight)
     
     proposed_ui_price = mevcut_fiyat
     if st.session_state.ai_pricing_recommendations:
@@ -227,7 +230,7 @@ with layout_col2:
 
 st.markdown("---")
 
-# 6. HUMAN-IN-THE-LOOP (HITL) ENTERPRISE AUDIT GATEWAY
+# HITL Enterprise Gateway
 st.subheader("🤝 Human-in-the-Loop Strategic Authorization Deck")
 st.write("Authorize the dynamic margin adjustments recommended above to deploy changes directly to the live store database.")
 
@@ -235,33 +238,28 @@ onay_col1, onay_col2, _ = st.columns([1.5, 1.5, 4])
 
 with onay_col1:
     if st.button("🚀 Authorize & Deploy to Store", use_container_width=True, type="primary"):
-        
         if st.session_state.ai_pricing_recommendations:
             for rec in st.session_state.ai_pricing_recommendations:
                 if rec['Urun_ID'] == product_id:
-                    # 1. audit_logs tablosuna fiyat değişim geçmişini güvenle yaz
                     sql_execute_command(
                         """INSERT INTO audit_logs (Urun_ID, Islem_Turu, Eski_Deger, Yeni_Deger) 
                            VALUES (?, 'FIYAT_GUNCELLEME', ?, ?)""",
                         (product_id, mevcut_fiyat, rec['Onerilen_Yeni_Fiyat'])
                     )
-                    
-                    # 2. Fiyat güncellemesini tek satır SQL sorgusuyla yapılıyor.
                     sql_execute_command(
                         "UPDATE products SET Mevcut_Fiyat = ? WHERE Urun_ID = ?",
                         (rec['Onerilen_Yeni_Fiyat'], rec['Urun_ID'])
                     )
         
-        # 🚀 Tarafsız Gateway Entegrasyon Senkronizasyonu
         gateway_service = ECommerceGateway()
         with st.spinner("Synchronizing prices with target store infrastructure..."):
             api_success = gateway_service.sync_product_price(product_id, proposed_ui_price)
             
         if api_success:
-            st.toast(f"Strategy deployed! {selected_product_name} pricing data synchronized across channels.", icon="🚀")
+            st.toast(f"Strategy deployed! Pricing data synchronized.", icon="🚀")
             st.balloons()
         else:
-            st.error("Gateway synchronization failed. Check core network credentials.")
+            st.error("Gateway synchronization failed. Check credentials.")
             
         st.session_state.is_pending = False
         st.rerun()
