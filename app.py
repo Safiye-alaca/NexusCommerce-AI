@@ -1,6 +1,6 @@
 import os
 import json
-import sqlite3 # 🚨 SQL Entegrasyonu için eklendi
+import sqlite3 # 🚨 SQL Entegrasyonu
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -84,7 +84,6 @@ with st.sidebar:
     yeni_stok = st.slider("Simulated Local Stock Levels", 0, 500, stok_miktari)
     
     if st.button("Inject Market Conditions"):
-        # 🚨 Önce eski stok değerini loglamak üzere kaydediyoruz
         eski_stok = stok_miktari
         
         # 1. Doğrudan SQL UPDATE komutuyla veri tabanı güncelleniyor.
@@ -93,7 +92,7 @@ with st.sidebar:
             (yeni_talep, yeni_stok, product_id)
         )
         
-        # 2. 🚨 YENİ: audit_logs tablosuna stok enjeksiyon geçmişini güvenle kaydet
+        # 2. audit_logs tablosuna stok enjeksiyon geçmişini güvenle kaydet
         sql_execute_command(
             """INSERT INTO audit_logs (Urun_ID, Islem_Turu, Eski_Deger, Yeni_Deger) 
                VALUES (?, 'STOK_ENJEKSIYON', ?, ?)""",
@@ -107,6 +106,21 @@ with st.sidebar:
 st.markdown(f"# 🔮 NexusCommerce AI - Operational Optimization Hub")
 st.markdown(f"Autonomous multi-agent orchestration console monitoring product telemetry for **{selected_product_name}** ({product_id}).")
 st.markdown("---")
+
+# ==========================================
+# 🚨 3. ADIM: PROAKTİF KİRİTİK STOK BİLDİRİM MERKEZİ (THRESHOLD DETECTOR)
+# ==========================================
+# Veri tabanından stoğu 60 birimin altına düşmüş kritik ürünleri sorguluyoruz
+kritik_urunler_df = sql_query_to_dataframe("SELECT Urun_Adi, Kalan_Stok FROM products WHERE Kalan_Stok < 60")
+
+if not kritik_urunler_df.empty:
+    st.subheader("🚨 Critical Operational Alerts (Proactive Supply Chain Control)")
+    for _, row in kritik_urunler_df.iterrows():
+        st.warning(
+            f"⚠️ **CRITICAL INVENTORY DEFICIT:** **{row['Urun_Adi']}** stok seviyesi tehlike eşiğinin altına düşmüştür! "
+            f"Güncel Depo Havuzu: **{row['Kalan_Stok']} Adet**. Satış kaybı yaşamamak adına acilen tedarik zincirini tetikleyin."
+        )
+    st.markdown("---")
 
 # 4. TOP TIERS: EXECUTIVE METRIC BOARDS
 col1, col2, col3, col4 = st.columns(4)
@@ -181,7 +195,7 @@ with layout_col2:
                 
                 filter_prompt = f"""
                 Sana bir multi-agent sisteminin ürettiği tüm dükkan raporu verilecek.
-                Senden isteğim, bu rapordan SADECE ve YALNIZCA '{selected_product_name} ({product_id})' ürünü ile ilgili olan analiz, durum og öneri kısımlarını ayıklayıp, 
+                Senden isteğim, bu rapordan SADECE ve YALNIZCA '{selected_product_name} ({product_id})' ürünü ile ilgili olan analiz, durum ve öneri kısımlarını ayıklayıp, 
                 mağaza sahibine hitaben samimi ve profesyonel bir dille sunmandır. Diğer ürünlerden bahsetme.
                 
                 Genel Rapor:
@@ -225,7 +239,7 @@ with onay_col1:
         if st.session_state.ai_pricing_recommendations:
             for rec in st.session_state.ai_pricing_recommendations:
                 if rec['Urun_ID'] == product_id:
-                    # 1. 🚨 YENİ: audit_logs tablosuna fiyat değişim geçmişini güvenle yaz
+                    # 1. audit_logs tablosuna fiyat değişim geçmişini güvenle yaz
                     sql_execute_command(
                         """INSERT INTO audit_logs (Urun_ID, Islem_Turu, Eski_Deger, Yeni_Deger) 
                            VALUES (?, 'FIYAT_GUNCELLEME', ?, ?)""",
