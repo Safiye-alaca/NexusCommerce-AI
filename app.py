@@ -22,7 +22,7 @@ st.set_page_config(
 # Load global environment rules
 load_dotenv()
 
-DB_FILE = "nexus_store.db" # 🚨 Yeni Canlı Veri Tabanı Kaynağımız
+DB_FILE = "nexus_store.db" # 🚨 Canlı Veri Tabanı Kaynağımız
 
 # --- 🛠️ SQL VERİ TABANI YARDIMCI FONKSİYONLARI ---
 def sql_query_to_dataframe(query, params=()):
@@ -84,12 +84,22 @@ with st.sidebar:
     yeni_stok = st.slider("Simulated Local Stock Levels", 0, 500, stok_miktari)
     
     if st.button("Inject Market Conditions"):
-        # 🚨 ESKİ: Pandas ile CSV'ye yazma tamamen kaldırıldı.
-        # 🚀 YENİ: Doğrudan SQL UPDATE komutuyla veri tabanı güncelleniyor.
+        # 🚨 Önce eski stok değerini loglamak üzere kaydediyoruz
+        eski_stok = stok_miktari
+        
+        # 1. Doğrudan SQL UPDATE komutuyla veri tabanı güncelleniyor.
         sql_execute_command(
             "UPDATE products SET Gunluk_Satis = ?, Kalan_Stok = ? WHERE Urun_ID = ?",
             (yeni_talep, yeni_stok, product_id)
         )
+        
+        # 2. 🚨 YENİ: audit_logs tablosuna stok enjeksiyon geçmişini güvenle kaydet
+        sql_execute_command(
+            """INSERT INTO audit_logs (Urun_ID, Islem_Turu, Eski_Deger, Yeni_Deger) 
+               VALUES (?, 'STOK_ENJEKSIYON', ?, ?)""",
+            (product_id, eski_stok, yeni_stok)
+        )
+        
         st.session_state.is_pending = False  
         st.rerun()
 
@@ -171,7 +181,7 @@ with layout_col2:
                 
                 filter_prompt = f"""
                 Sana bir multi-agent sisteminin ürettiği tüm dükkan raporu verilecek.
-                Senden isteğim, bu rapordan SADECE ve YALNIZCA '{selected_product_name} ({product_id})' ürünü ile ilgili olan analiz, durum ve öneri kısımlarını ayıklayıp, 
+                Senden isteğim, bu rapordan SADECE ve YALNIZCA '{selected_product_name} ({product_id})' ürünü ile ilgili olan analiz, durum og öneri kısımlarını ayıklayıp, 
                 mağaza sahibine hitaben samimi ve profesyonel bir dille sunmandır. Diğer ürünlerden bahsetme.
                 
                 Genel Rapor:
@@ -212,14 +222,21 @@ onay_col1, onay_col2, _ = st.columns([1.5, 1.5, 4])
 with onay_col1:
     if st.button("🚀 Authorize & Deploy to Store", use_container_width=True, type="primary"):
         
-        # 🚨 ESKİ: CSV açıp satır satır değiştirme mantığı silindi.
-        # 🚀 YENİ: Fiyat güncellemesi tek satır SQL sorgusuyla yapılıyor.
         if st.session_state.ai_pricing_recommendations:
             for rec in st.session_state.ai_pricing_recommendations:
-                sql_execute_command(
-                    "UPDATE products SET Mevcut_Fiyat = ? WHERE Urun_ID = ?",
-                    (rec['Onerilen_Yeni_Fiyat'], rec['Urun_ID'])
-                )
+                if rec['Urun_ID'] == product_id:
+                    # 1. 🚨 YENİ: audit_logs tablosuna fiyat değişim geçmişini güvenle yaz
+                    sql_execute_command(
+                        """INSERT INTO audit_logs (Urun_ID, Islem_Turu, Eski_Deger, Yeni_Deger) 
+                           VALUES (?, 'FIYAT_GUNCELLEME', ?, ?)""",
+                        (product_id, mevcut_fiyat, rec['Onerilen_Yeni_Fiyat'])
+                    )
+                    
+                    # 2. Fiyat güncellemesini tek satır SQL sorgusuyla yapılıyor.
+                    sql_execute_command(
+                        "UPDATE products SET Mevcut_Fiyat = ? WHERE Urun_ID = ?",
+                        (rec['Onerilen_Yeni_Fiyat'], rec['Urun_ID'])
+                    )
         
         # 🚀 Tarafsız Gateway Entegrasyon Senkronizasyonu
         gateway_service = ECommerceGateway()
