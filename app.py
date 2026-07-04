@@ -26,29 +26,20 @@ DB_FILE = "nexus_store.db"
 
 # --- 🛠️ ZIRHLI SQL VERİ TABANI YARDIMCI FONKSİYONLARI (CONTEXT MANAGER & TIMEOUT) ---
 def sql_query_to_dataframe(query, params=()):
-    """
-    Güvenli Context Manager ve Timeout koruması ile SQL sorgusu çalıştırır.
-    Hata oluşsa bile bağlantı sızıntısı (Connection Leak) yapmaz.
-    """
     try:
-        # timeout=10 ile maksimum sabır süresi eklenerek kilitlenmeler önlenir
         with sqlite3.connect(DB_FILE, timeout=10) as conn:
             df = pd.read_sql_query(query, conn, params=params)
             return df
     except sqlite3.OperationalError as e:
         st.error(f"❌ Veri Tabanı Yoğunluk Hatası (Kilitlenme Aşımı): {str(e)}")
-        return pd.DataFrame() # Boş DataFrame dönerek uygulamanın çökmesini engeller
+        return pd.DataFrame() 
 
 def sql_execute_command(command, params=()):
-    """
-    UPDATE, INSERT gibi veri tabanını değiştiren SQL komutlarını 
-    otomatik commit ve güvenli bağlantı kapatma garantisi ile yürütür.
-    """
     try:
         with sqlite3.connect(DB_FILE, timeout=10) as conn:
             cursor = conn.cursor()
             cursor.execute(command, params)
-            conn.commit() # with bloğu otomatik commit sağlasa da garantiye alıyoruz
+            conn.commit() 
     except sqlite3.OperationalError as e:
         st.error(f"❌ Kritik SQL Komut Yürütme Hatası (Database Locked): {str(e)}")
 
@@ -282,3 +273,58 @@ if product_options and not product_data.empty:
             st.toast("Pricing updates dropped by manager. Safe baseline metrics intact.", icon="🛑")
             st.session_state.is_pending = False
             st.rerun()
+
+    # ==========================================
+    # 📊 🚨 YENİ KATMAN: LOG ANALİTİĞİ VE SİSTEM TELEMETRİSİ PANELİ
+    # ==========================================
+    st.markdown("---")
+    st.subheader("📊 System Telemetry & Audit Logs Analytics")
+    st.write("Real-time telemetry analysis of transaction distribution types and historical log records.")
+
+    telemetry_col1, telemetry_col2 = st.columns([2, 3])
+
+    with telemetry_col1:
+        st.markdown("#### 🥧 Log Operations Distribution")
+        # SQL Agregasyon Sorgusu: Hangi işlemden kaç tane yapıldığını dinamik çeker
+        log_counts_df = sql_query_to_dataframe(
+            "SELECT Islem_Turu, COUNT(*) as Toplam FROM audit_logs GROUP BY Islem_Turu"
+        )
+        
+        if not log_counts_df.empty:
+            # ECharts Pasta Grafiği veri formatını hazırlıyoruz
+            pie_data = []
+            for _, row in log_counts_df.iterrows():
+                pie_data.append({"value": int(row['Toplam']), "name": str(row['Islem_Turu'])})
+                
+            pie_options = {
+                "tooltip": {"trigger": "item"},
+                "legend": {"top": "5%", "left": "center"},
+                "series": [
+                    {
+                        "name": "Transaction Count",
+                        "type": "pie",
+                        "radius": ["40%", "70%"],
+                        "avoidLabelOverlap": False,
+                        "itemStyle": {"borderRadius": 10, "borderColor": "#fff", "borderWidth": 2},
+                        "label": {"show": False, "position": "center"},
+                        "emphasis": {"label": {"show": True, "fontSize": "16", "fontWeight": "bold"}},
+                        "labelLine": {"show": False},
+                        "data": pie_data
+                    }
+                ]
+            }
+            st_echarts(pie_options, height="300px")
+        else:
+            st.info("Henüz sistem telemetrisi için yeterli log kaydı bulunmuyor.")
+
+    with telemetry_col2:
+        st.markdown("#### 📜 Live System Activity Log Stream")
+        # Son 5 kritik işlemi zaman damgasına göre azalan sırada çeker
+        recent_logs_df = sql_query_to_dataframe(
+            "SELECT Log_ID, Urun_ID, Islem_Turu, Eski_Deger, Yeni_Deger, Zaman_Damgasi FROM audit_logs ORDER BY Zaman_Damgasi DESC LIMIT 5"
+        )
+        
+        if not recent_logs_df.empty:
+            st.dataframe(recent_logs_df, use_container_width=True, hide_index=True)
+        else:
+            st.info("Sistem log akışı şu an boş.")
