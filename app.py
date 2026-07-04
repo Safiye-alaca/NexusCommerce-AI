@@ -104,6 +104,7 @@ with st.sidebar:
                     (product_id, eski_stok, yeni_stok)
                 )
                 
+                # 🚨 ÖNBELLEK GEÇERSİZ KILMA (CACHE INVALIDATION): Yeni veri girildiğinde önbellek silinir!
                 st.session_state.is_pending = False  
                 st.rerun()
     else:
@@ -182,10 +183,12 @@ if product_options and not product_data.empty:
     with layout_col2:
         st.subheader("🔮 Autonomous Agent Consensus Room")
         
+        # Ürün değiştiğinde önbelleği geçersiz kılma kontrolü
         if "last_selected_product" not in st.session_state or st.session_state.last_selected_product != selected_product_name:
             st.session_state.last_selected_product = selected_product_name
             st.session_state.is_pending = False
 
+        # 🚨 PERFORMANS KALKANI: Eğer önbellekte veri yoksa (is_pending == False) API'ye git
         if not st.session_state.is_pending:
             with st.spinner(f"🕵️‍♂️ Ajanlar arası otonom tartışma oturumu başlatılıyor..."):
                 genel_rapor = run_data_scientist_agent()
@@ -207,9 +210,11 @@ if product_options and not product_data.empty:
                     Finans Raporu: {mali_rapor}
                     """
                     response = client.models.generate_content(model='gemini-2.5-flash', contents=filter_prompt)
+                    
+                    # Verileri yerel session_state hafızasına kaydediyoruz (Caching)
                     st.session_state.inventory_insight = response.text
                     st.session_state.financial_insight = mali_rapor
-                    st.session_state.is_pending = True
+                    st.session_state.is_pending = True # Kalkan kilitlendi!
                     
                 except (ClientError, ServerError) as e:
                     st.session_state.is_pending = True
@@ -218,6 +223,7 @@ if product_options and not product_data.empty:
                     else:
                         st.session_state.inventory_insight = "⚠️ **Kota Sınırı (429):** Günlük istek limitiniz aşıldı. Kural tabanlı yerel motor devrededir."
 
+        # Ajan yanıtları doğrudan yerel önbellekten (Session State) jet hızında ekrana basılır
         tab1, tab2 = st.tabs(["🤝 Executive Consensus", "📊 Raw CFO Log"])
         with tab1:
             st.info(st.session_state.inventory_insight)
@@ -265,6 +271,7 @@ if product_options and not product_data.empty:
             else:
                 st.error("Gateway synchronization failed. Check credentials.")
                 
+            # İşlem bittiğinde önbelleği tazelemek için sıfırlıyoruz
             st.session_state.is_pending = False
             st.rerun()
 
@@ -274,9 +281,7 @@ if product_options and not product_data.empty:
             st.session_state.is_pending = False
             st.rerun()
 
-    # ==========================================
-    # 📊 🚨 YENİ KATMAN: LOG ANALİTİĞİ VE SİSTEM TELEMETRİSİ PANELİ
-    # ==========================================
+    # Log Analitiği Paneli
     st.markdown("---")
     st.subheader("📊 System Telemetry & Audit Logs Analytics")
     st.write("Real-time telemetry analysis of transaction distribution types and historical log records.")
@@ -285,13 +290,11 @@ if product_options and not product_data.empty:
 
     with telemetry_col1:
         st.markdown("#### 🥧 Log Operations Distribution")
-        # SQL Agregasyon Sorgusu: Hangi işlemden kaç tane yapıldığını dinamik çeker
         log_counts_df = sql_query_to_dataframe(
             "SELECT Islem_Turu, COUNT(*) as Toplam FROM audit_logs GROUP BY Islem_Turu"
         )
         
         if not log_counts_df.empty:
-            # ECharts Pasta Grafiği veri formatını hazırlıyoruz
             pie_data = []
             for _, row in log_counts_df.iterrows():
                 pie_data.append({"value": int(row['Toplam']), "name": str(row['Islem_Turu'])})
@@ -319,7 +322,6 @@ if product_options and not product_data.empty:
 
     with telemetry_col2:
         st.markdown("#### 📜 Live System Activity Log Stream")
-        # Son 5 kritik işlemi zaman damgasına göre azalan sırada çeker
         recent_logs_df = sql_query_to_dataframe(
             "SELECT Log_ID, Urun_ID, Islem_Turu, Eski_Deger, Yeni_Deger, Zaman_Damgasi FROM audit_logs ORDER BY Zaman_Damgasi DESC LIMIT 5"
         )
