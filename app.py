@@ -6,7 +6,7 @@ import streamlit as st
 from streamlit_echarts import st_echarts
 from dotenv import load_dotenv
 
-# 🚨 YENİ MERKEZİ VERİ TABANI IMPORTU (REFACTORING)
+# Merkezi veri tabanı bağlantısı
 from database_manager import sql_query_to_dataframe, sql_execute_command
 from data_scientist_agent import run_data_scientist_agent
 from financial_agent import run_financial_agent
@@ -59,6 +59,11 @@ with st.sidebar:
             maliyet = float(product_data.loc[0, "Maliyet"])
             mevcut_fiyat = float(product_data.loc[0, "Mevcut_Fiyat"])
             talep_skoru = int(product_data.loc[0, "Gunluk_Satis"])
+            
+            # 🚨 YENİ: Veri tabanından rakip fiyat metriklerini okuyoruz
+            rakip_a_fiyati = float(product_data.loc[0, "Rakip_Fiyat_A"])
+            rakip_b_fiyati = float(product_data.loc[0, "Rakip_Fiyat_B"])
+            pazar_ortalamasi = (rakip_a_fiyati + rakip_b_fiyati) / 2
 
             st.markdown("---")
             st.subheader("⚙️ Model & Parameter Matrix")
@@ -102,7 +107,8 @@ if product_options and not product_data.empty:
             )
         st.markdown("---")
 
-    # Metrik Panosu
+    # 1. Metrik Panosu: Yerel Dükkan Metrikleri
+    st.subheader("🏬 Local Inventory Performance Metrics")
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric(label="📦 Warehouse Inventory", value=f"{stok_miktari} Units", delta="-7 Risk Delta" if stok_miktari < talep_skoru else "Optimal")
@@ -115,7 +121,24 @@ if product_options and not product_data.empty:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Grafikler
+    # 🚨 2. YENİ METRİK PANOSU: PAZAR REKABET İSTİHBARATI
+    st.subheader("📡 Real-Time Market Intelligence & Competitor Matrix")
+    p_col1, p_col2, p_col3, p_col4 = st.columns(4)
+    with p_col1:
+        st.metric(label="🏢 Competitor A Price", value=f"{rakip_a_fiyati} TL")
+    with p_col2:
+        st.metric(label="🏪 Competitor B Price", value=f"{rakip_b_fiyati} TL")
+    with p_col3:
+        st.metric(label="📊 Market Average Benchmark", value=f"{round(pazar_ortalamasi, 2)} TL")
+    with p_col4:
+        # Bizim fiyatımızın piyasa ortalamasına göre farkını hesaplayıp duyarlı delta basıyoruz
+        fiyat_farki = mevcut_fiyat - pazar_ortalamasi
+        delta_label = f"{round(abs(fiyat_farki), 2)} TL " + ("Below Market" if fiyat_farki < 0 else "Above Market")
+        st.metric(label="⚖️ Market Position Index", value="Competitive" if abs(fiyat_farki) < (pazar_ortalamasi * 0.05) else "Aggressive", delta=delta_label, delta_color="normal" if fiyat_farki <= 0 else "inverse")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Grafikler ve Ajan Alanı
     layout_col1, layout_col2 = st.columns([3, 2])
     with layout_col1:
         st.subheader("📈 Pricing Trajectory & Demand Velocity (ECharts)")
@@ -160,7 +183,7 @@ if product_options and not product_data.empty:
             st.session_state.is_pending = False
 
         if not st.session_state.is_pending:
-            with st.spinner(f"🕵️‍♂️ Ajanlar arası otonom tartışma oturumu başlatılıyor..."):
+            with st.spinner(f"🕵️‍♂️ Ajanlar arası otonom pazar ve rekabet tartışması başlatılıyor..."):
                 genel_rapor = run_data_scientist_agent()
                 st.session_state.ai_pricing_recommendations = calculate_dynamic_pricing()
                 mali_rapor = run_financial_agent(stok_ajani_yorumu=genel_rapor)
