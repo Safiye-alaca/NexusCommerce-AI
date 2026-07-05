@@ -2,7 +2,7 @@ import os
 import json
 from google import genai
 from google.genai import types
-from google.genai.errors import ClientError, ServerError # 🚨 Çift Katmanlı Hata Kalkanı Eklendi
+from google.genai.errors import ClientError, ServerError # Çift Katmanlı Hata Kalkanı Korundu
 from pricing_strategy import calculate_dynamic_pricing
 from dotenv import load_dotenv
 
@@ -18,26 +18,32 @@ if not GOOGLE_API_KEY:
 client = genai.Client(api_key=GOOGLE_API_KEY)
 
 def run_financial_agent(stok_ajani_yorumu=""):
-    print("🤖 Finans Ajanı (Gemini v2) yeni fiyatları ve kâr marjlarını analiz ediyor...\n")
+    print("🤖 Finans Ajanı (Gemini v2) yeni pazar fiyatlarını ve kâr marjlarını analiz ediyor...\n")
     
-    # pricing_strategy artık SQL tabanlı çalıştığı için burası otomatik olarak canlı veri alır.
+    # pricing_strategy artık pazar ve rakip ortalamalarını da barındıran güncel canlı veriyi döner
     fiyat_raporu = calculate_dynamic_pricing()
     fiyat_raporu_metni = json.dumps(fiyat_raporu, ensure_ascii=False, indent=2)
     
+    # 🚨 PROMPT UPGRADE: Sistem talimatını Oyun Teorisi, Nash Dengesi ve Fiyat Savaşı Korumasına göre genişletiyoruz
     system_instruction = f"""
-    Sen NexusCommerce AI sisteminin kıdemli Finans Direktörü (CFO) ve Dinamik Fiyatlandırma Ajanısın.
-    Görevin, sana verilen dinamik fiyatlandırma önerilerini incelemek ve mağaza sahibine finansal bir özet sunmaktır.
+    Sen NexusCommerce AI sisteminin kıdemli Finans Direktörü (CFO) ve Dinamik Fiyatlandırma Stratejistisin.
+    Görevin, sana verilen pazar duyarlı dinamik fiyatlandırma önerilerini incelemek ve mağaza sahibine finansal bir özet sunmaktır.
     
-    Arka Plan Bilgisi: Sana dükkanın finansal verileriyle birlikte, Stok Yönetim Ajanımızın yazdığı Türkçe rapor da verilecektir. 
-    Kararlarını açıklarken bu rapordaki lojistik uyarıları da göz önünde bulundur.
+    Finansal Analiz Kuralların:
+    1. Önerilen yeni fiyatların dükkanın kâr marjını koruyup korumadığını maliyet tabanına göre denetle.
+    2. Rakiplerin fiyat ortalamalarını (Pazar_Ortalamasi) göz önünde bulundurarak, mağazanın pazar payını kaybetmeyeceği rasyonel fiyat dengeleri (Nash Dengesi) kur.
+    3. Yıkıcı fiyat savaşlarından (Price War) kaçınmak adına, algoritmanın emniyet bariyerlerini (maliyet alt sınırlarını) finansal açıdan yorumla.
     
-    Stok Ajanından Gelen Türkçe Rapor:
+    Arka Plan Bilgisi: Sana dükkanın finansal verileriyle birlikte, Stok ve Pazar Analitiği Ajanımızın yazdığı Türkçe rapor da verilmiştir. 
+    Kararlarını ve finansal gerekçelerini açıklarken bu rapordaki lojistik ve rakip uyarılarını da göz önünde bulundur.
+    
+    Stok ve Pazar Ajanından Gelen Türkçe Rapor:
     ---------------------------------
     {stok_ajani_yorumu}
     ---------------------------------
     """
     
-    prompt = f"İşte mağazanın otonom dinamik fiyatlandırma raporu:\n\n{fiyat_raporu_metni}"
+    prompt = f"İşte mağazanın otonom dinamik fiyatlandırma ve pazar benchmark raporu:\n\n{fiyat_raporu_metni}"
     
     try:
         response = client.models.generate_content(
@@ -50,21 +56,21 @@ def run_financial_agent(stok_ajani_yorumu=""):
         )
         
         print("==================================================")
-        print("📢 FİNANS AJANININ MAĞAZA SAHİBİNE STRATEJİ RAPORU")
+        print("📢 FİNANS AJANININ MAĞAZA SAHİBİNE STRATEJİ RAPORU (PAZAR ODAKLI)")
         print("==================================================")
         print(response.text)
         print("==================================================")
         return response.text
 
     except (ClientError, ServerError) as e:
-        # 🛡️ FAULT TOLERANCE (HATA TOLERANSI) MİMARİSİ
+        # 🛡️ FAULT TOLERANCE (HATA TOLERANSI) MİMARİSİ KORUNDU
         error_type = "503 Sunucu Yoğunluğu" if "503" in str(e) else "429 Kota Sınırı"
         print(f"\n[Financial Agent Warning] Gemini API {error_type} hatası fırlattı. Finansal yedek rapor aktif edildi.\n")
         
         backup_financial_report = """
         [FİNANSAL STRATEJİ RAPORU - GEÇİCİ YEDEK MOD]
         Google API servislerindeki anlık yoğunluk nedeniyle CFO Ajanının detaylı finansal yorumları şu an oluşturulamadı.
-        Ancak, algoritma motorumuz tarafından hesaplanan dinamik fiyat listesi ve kurumsal güvenlik kuralları (Guardrails) 
+        Unutmayın, algoritma motorumuz tarafından hesaplanan pazar duyarlı dinamik fiyat listesi ve kurumsal güvenlik kuralları (Guardrails) 
         veri tabanı seviyesinde kararlı bir şekilde işletilmektedir. Mevcut önerilen marjları güvenle onaylayabilirsiniz.
         """
         return backup_financial_report
