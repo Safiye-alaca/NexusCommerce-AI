@@ -1,11 +1,13 @@
 import os
 import json
-import sqlite3 
 import numpy as np
 import pandas as pd
 import streamlit as st
 from streamlit_echarts import st_echarts
 from dotenv import load_dotenv
+
+# 🚨 YENİ MERKEZİ VERİ TABANI IMPORTU (REFACTORING)
+from database_manager import sql_query_to_dataframe, sql_execute_command
 from data_scientist_agent import run_data_scientist_agent
 from financial_agent import run_financial_agent
 from pricing_strategy import calculate_dynamic_pricing
@@ -21,27 +23,6 @@ st.set_page_config(
 
 # Load global environment rules
 load_dotenv()
-
-DB_FILE = "nexus_store.db" 
-
-# --- 🛠️ ZIRHLI SQL VERİ TABANI YARDIMCI FONKSİYONLARI (CONTEXT MANAGER & TIMEOUT) ---
-def sql_query_to_dataframe(query, params=()):
-    try:
-        with sqlite3.connect(DB_FILE, timeout=10) as conn:
-            df = pd.read_sql_query(query, conn, params=params)
-            return df
-    except sqlite3.OperationalError as e:
-        st.error(f"❌ Veri Tabanı Yoğunluk Hatası (Kilitlenme Aşımı): {str(e)}")
-        return pd.DataFrame() 
-
-def sql_execute_command(command, params=()):
-    try:
-        with sqlite3.connect(DB_FILE, timeout=10) as conn:
-            cursor = conn.cursor()
-            cursor.execute(command, params)
-            conn.commit() 
-    except sqlite3.OperationalError as e:
-        st.error(f"❌ Kritik SQL Komut Yürütme Hatası (Database Locked): {str(e)}")
 
 # --- 📊 INITIALIZATION LAYER ---
 if "ai_pricing_recommendations" not in st.session_state:
@@ -67,11 +48,9 @@ with st.sidebar:
     st.caption("Developer Platform Console")
     st.markdown("---")
     
-    # Dynamic Product Selection
     st.subheader("📦 Inventory Selection")
     if product_options:
         selected_product_name = st.selectbox("Select Target Product", product_options)
-        
         product_data = sql_query_to_dataframe("SELECT * FROM products WHERE Urun_Adi = ?", (selected_product_name,))
         
         if not product_data.empty:
@@ -92,19 +71,15 @@ with st.sidebar:
             
             if st.button("Inject Market Conditions"):
                 eski_stok = stok_miktari
-                
                 sql_execute_command(
                     "UPDATE products SET Gunluk_Satis = ?, Kalan_Stok = ? WHERE Urun_ID = ?",
                     (yeni_talep, yeni_stok, product_id)
                 )
-                
                 sql_execute_command(
                     """INSERT INTO audit_logs (Urun_ID, Islem_Turu, Eski_Deger, Yeni_Deger) 
                        VALUES (?, 'STOK_ENJEKSIYON', ?, ?)""",
                     (product_id, eski_stok, yeni_stok)
                 )
-                
-                # 🚨 ÖNBELLEK GEÇERSİZ KILMA (CACHE INVALIDATION): Yeni veri girildiğinde önbellek silinir!
                 st.session_state.is_pending = False  
                 st.rerun()
     else:
@@ -116,14 +91,14 @@ if product_options and not product_data.empty:
     st.markdown(f"Autonomous multi-agent orchestration console monitoring product telemetry for **{selected_product_name}** ({product_id}).")
     st.markdown("---")
 
-    # Kritik Stok Proaktif Bildirimleri
+    # Kritik Stok Bildirimleri
     kritik_urunler_df = sql_query_to_dataframe("SELECT Urun_Adi, Kalan_Stok FROM products WHERE Kalan_Stok < 60")
     if not kritik_urunler_df.empty:
         st.subheader("🚨 Critical Operational Alerts (Proactive Supply Chain Control)")
         for _, row in kritik_urunler_df.iterrows():
             st.warning(
                 f"⚠️ **CRITICAL INVENTORY DEFICIT:** **{row['Urun_Adi']}** stok seviyesi tehlike eşiğinin altına düşmüştür! "
-                f"Güncel Depo Havuzu: **{row['Kalan_Stok']} Adet**. Satış kaybı yaşamamak adına acilen tedarik zincirini tetikleyin."
+                f"Güncel Depo Havuzu: **{row['Kalan_Stok']} Adet**. Acilen tedarik zincirini tetikleyin."
             )
         st.markdown("---")
 
@@ -140,12 +115,10 @@ if product_options and not product_data.empty:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Grafik ve Ajan Bölmesi
+    # Grafikler
     layout_col1, layout_col2 = st.columns([3, 2])
-
     with layout_col1:
         st.subheader("📈 Pricing Trajectory & Demand Velocity (ECharts)")
-        
         options = {
             "tooltip": {"trigger": "axis", "axisPointer": {"type": "cross"}},
             "legend": {"data": ["Retail Price Level", "Demand Momentum"]},
@@ -165,8 +138,7 @@ if product_options and not product_data.empty:
                     "type": "line",
                     "smooth": True,
                     "data": [mevcut_fiyat * 0.9, mevcut_fiyat * 0.95, mevcut_fiyat, mevcut_fiyat, mevcut_fiyat * 1.02, mevcut_fiyat, mevcut_fiyat],
-                    "lineStyle": {"color": "#5470c6", "width": 3},
-                    "itemStyle": {"borderWidth": 2}
+                    "lineStyle": {"color": "#5470c6", "width": 3}
                 },
                 {
                     "name": "Demand Momentum",
@@ -174,7 +146,7 @@ if product_options and not product_data.empty:
                     "smooth": True,
                     "yAxisIndex": 1,
                     "data": [int(talep_skoru*0.5), int(talep_skoru*0.7), int(talep_skoru*0.9), talep_skoru, int(talep_skoru*1.1), int(talep_skoru*0.95), talep_skoru],
-                    "lineStyle": {"color": "#91cc75", "width": 3},
+                    "lineStyle": {"color": "#91cc75", "width": 3}
                 }
             ],
         }
@@ -183,12 +155,10 @@ if product_options and not product_data.empty:
     with layout_col2:
         st.subheader("🔮 Autonomous Agent Consensus Room")
         
-        # Ürün değiştiğinde önbelleği geçersiz kılma kontrolü
         if "last_selected_product" not in st.session_state or st.session_state.last_selected_product != selected_product_name:
             st.session_state.last_selected_product = selected_product_name
             st.session_state.is_pending = False
 
-        # 🚨 PERFORMANS KALKANI: Eğer önbellekte veri yoksa (is_pending == False) API'ye git
         if not st.session_state.is_pending:
             with st.spinner(f"🕵️‍♂️ Ajanlar arası otonom tartışma oturumu başlatılıyor..."):
                 genel_rapor = run_data_scientist_agent()
@@ -200,30 +170,20 @@ if product_options and not product_data.empty:
                 
                 try:
                     client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-                    
                     filter_prompt = f"""
                     Sana bir veri bilimci ve bir finans ajanının ortak tartışma raporları verildi.
-                    Senden isteğim, bu raporlardan SADECE ve YALNIZCA '{selected_product_name} ({product_id})' ürünü ile ilgili olan lojistik analizleri ve finansal fiyat stratejilerini ayıklayıp, 
-                    mağaza sahibine hitaben 'Ortak Mutabakat Raporu' başlığı altında samimi ve profesyonel bir dille sunmandır. Diğer ürünlerden bahsetme.
-                    
+                    Senden isteğim, bu raporlardan SADECE ve YALNIZCA '{selected_product_name} ({product_id})' ürünü ile ilgili kısımları ayıklayıp sunmandır.
                     Veri Bilimci Raporu: {genel_rapor}
                     Finans Raporu: {mali_rapor}
                     """
                     response = client.models.generate_content(model='gemini-2.5-flash', contents=filter_prompt)
-                    
-                    # Verileri yerel session_state hafızasına kaydediyoruz (Caching)
                     st.session_state.inventory_insight = response.text
                     st.session_state.financial_insight = mali_rapor
-                    st.session_state.is_pending = True # Kalkan kilitlendi!
-                    
-                except (ClientError, ServerError) as e:
                     st.session_state.is_pending = True
-                    if "503" in str(e) or "UNAVAILABLE" in str(e):
-                        st.session_state.inventory_insight = "⚠️ **Sunucu Yoğun (503):** Canlı tartışma günlüğü oluşturulamadı. Algoritmik emniyet fiyatları devrededir."
-                    else:
-                        st.session_state.inventory_insight = "⚠️ **Kota Sınırı (429):** Günlük istek limitiniz aşıldı. Kural tabanlı yerel motor devrededir."
+                except (ClientError, ServerError):
+                    st.session_state.is_pending = True
+                    st.session_state.inventory_insight = "⚠️ Yerel emniyet modu aktif."
 
-        # Ajan yanıtları doğrudan yerel önbellekten (Session State) jet hızında ekrana basılır
         tab1, tab2 = st.tabs(["🤝 Executive Consensus", "📊 Raw CFO Log"])
         with tab1:
             st.info(st.session_state.inventory_insight)
@@ -242,8 +202,6 @@ if product_options and not product_data.empty:
 
     # HITL Enterprise Gateway
     st.subheader("🤝 Human-in-the-Loop Strategic Authorization Deck")
-    st.write("Authorize the dynamic margin adjustments recommended above to deploy changes directly to the live store database.")
-
     onay_col1, onay_col2, _ = st.columns([1.5, 1.5, 4])
 
     with onay_col1:
@@ -262,71 +220,40 @@ if product_options and not product_data.empty:
                         )
             
             gateway_service = ECommerceGateway()
-            with st.spinner("Synchronizing prices with target store infrastructure..."):
+            with st.spinner("Synchronizing prices..."):
                 api_success = gateway_service.sync_product_price(product_id, proposed_ui_price)
                 
             if api_success:
-                st.toast(f"Strategy deployed! Pricing data synchronized.", icon="🚀")
+                st.toast(f"Strategy deployed!", icon="🚀")
                 st.balloons()
-            else:
-                st.error("Gateway synchronization failed. Check credentials.")
-                
-            # İşlem bittiğinde önbelleği tazelemek için sıfırlıyoruz
             st.session_state.is_pending = False
             st.rerun()
 
     with onay_col2:
         if st.button("❌ Dismiss Recommendations", use_container_width=True):
-            st.toast("Pricing updates dropped by manager. Safe baseline metrics intact.", icon="🛑")
+            st.toast("Pricing updates dropped.", icon="🛑")
             st.session_state.is_pending = False
             st.rerun()
 
     # Log Analitiği Paneli
     st.markdown("---")
     st.subheader("📊 System Telemetry & Audit Logs Analytics")
-    st.write("Real-time telemetry analysis of transaction distribution types and historical log records.")
-
     telemetry_col1, telemetry_col2 = st.columns([2, 3])
 
     with telemetry_col1:
         st.markdown("#### 🥧 Log Operations Distribution")
-        log_counts_df = sql_query_to_dataframe(
-            "SELECT Islem_Turu, COUNT(*) as Toplam FROM audit_logs GROUP BY Islem_Turu"
-        )
-        
+        log_counts_df = sql_query_to_dataframe("SELECT Islem_Turu, COUNT(*) as Toplam FROM audit_logs GROUP BY Islem_Turu")
         if not log_counts_df.empty:
-            pie_data = []
-            for _, row in log_counts_df.iterrows():
-                pie_data.append({"value": int(row['Toplam']), "name": str(row['Islem_Turu'])})
-                
+            pie_data = [{"value": int(row['Toplam']), "name": str(row['Islem_Turu'])} for _, row in log_counts_df.iterrows()]
             pie_options = {
                 "tooltip": {"trigger": "item"},
                 "legend": {"top": "5%", "left": "center"},
-                "series": [
-                    {
-                        "name": "Transaction Count",
-                        "type": "pie",
-                        "radius": ["40%", "70%"],
-                        "avoidLabelOverlap": False,
-                        "itemStyle": {"borderRadius": 10, "borderColor": "#fff", "borderWidth": 2},
-                        "label": {"show": False, "position": "center"},
-                        "emphasis": {"label": {"show": True, "fontSize": "16", "fontWeight": "bold"}},
-                        "labelLine": {"show": False},
-                        "data": pie_data
-                    }
-                ]
+                "series": [{"name": "Transaction", "type": "pie", "radius": ["40%", "70%"], "data": pie_data}]
             }
             st_echarts(pie_options, height="300px")
-        else:
-            st.info("Henüz sistem telemetrisi için yeterli log kaydı bulunmuyor.")
 
     with telemetry_col2:
         st.markdown("#### 📜 Live System Activity Log Stream")
-        recent_logs_df = sql_query_to_dataframe(
-            "SELECT Log_ID, Urun_ID, Islem_Turu, Eski_Deger, Yeni_Deger, Zaman_Damgasi FROM audit_logs ORDER BY Zaman_Damgasi DESC LIMIT 5"
-        )
-        
+        recent_logs_df = sql_query_to_dataframe("SELECT Log_ID, Urun_ID, Islem_Turu, Eski_Deger, Yeni_Deger, Zaman_Damgasi FROM audit_logs ORDER BY Zaman_Damgasi DESC LIMIT 5")
         if not recent_logs_df.empty:
             st.dataframe(recent_logs_df, use_container_width=True, hide_index=True)
-        else:
-            st.info("Sistem log akışı şu an boş.")
