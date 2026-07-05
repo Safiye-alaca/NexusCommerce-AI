@@ -1,5 +1,7 @@
 # 🔮 NexusCommerce AI - Multi-Agent Autonomous E-Commerce Engine
 
+<img width="1918" height="851" alt="Ekran görüntüsü 2026-07-05 133546" src="https://github.com/user-attachments/assets/d6bbe2f0-876b-4f25-babd-484e6cea1029" />
+
 NexusCommerce AI, e-ticaret envanter yönetimi, pazar analitiği ve dinamik fiyatlandırma süreçlerini uçtan uca otonom olarak optimize eden, kurumsal mimariye sahip multi-agent (çoklu ajan) tabanlı bir SaaS platformudur. 
 
 Sistem, işletmenin iç depo ve envanter telemetrisi ile dış pazar istihbaratını (rakip fiyat değişimlerini) harmanlayarak **Oyun Teorisi (Nash Dengesi)** ve marj koruma zırhları altında kârlılığı maksimize etmek üzere tasarlanmıştır.
